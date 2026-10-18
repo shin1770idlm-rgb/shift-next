@@ -1,0 +1,38 @@
+:root{--bg:#eef2f3;--panel:#fff;--ink:#1c2b36;--sub:#667784;--line:#d6dee2;--accent:#1f5f7a;--warn:#c0392b;--e:#cfe8f5;--eT:#12506e;--o:#e4e8ea;--oT:#7b8a95}
+.u0{--ub:#bcdcf7;--ut:#0f4c81}.u1{--ub:#f7c4c4;--ut:#9b1c1c}.u2{--ub:#fcd5a5;--ut:#8a4a07}.u3{--ub:#f8ec9c;--ut:#6b5a00}.u4{--ub:#c3e8c0;--ut:#1d6b27}.u5{--ub:#dac8f2;--ut:#4b2a8a}.u6{--ub:#b5eaf0;--ut:#0b5e6b}.u7{--ub:#f9c6e2;--ut:#8c1d63}.u8{--ub:#dcef9f;--ut:#4a6a00}.u9{--ub:#e3cdb4;--ut:#5a3b1f}
+
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Hiragino Sans","Yu Gothic",Meiryo,sans-serif;line-height:1.6}
+main{max-width:1100px;margin:0 auto;padding:20px 14px 40px}
+h1{font-size:22px;margin:0 0 14px}h2{font-size:15px;margin:0 0 8px}
+button,input,select{font:inherit;color:inherit}
+.btn{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 12px;cursor:pointer}
+.btn.main{background:var(--accent);color:#fff;border-color:var(--accent)}.btn:disabled{opacity:.4;cursor:default}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}.bar .t{font-size:18px;font-weight:700;min-width:12em;text-align:center}
+.fin{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 16px;margin:0 0 14px;max-width:420px}
+.fin.wide{max-width:none}
+.r{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:3px 0;font-size:14px}
+.r input,.add input,.add select,.w,.rl,.row select,.drow select,.du,.fin select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel)}
+.r input{width:150px;text-align:right}.tot{border-top:1px solid var(--line);margin-top:6px;padding-top:8px}.big{font-size:24px;font-weight:700;color:var(--accent)}
+.wrap{overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px;margin-bottom:12px}
+table{border-collapse:separate;border-spacing:0;width:100%}th,td{border-bottom:1px solid var(--line);padding:4px;text-align:center}
+th{font-weight:500;font-size:13px;color:var(--sub);padding:8px 4px}th.sat,.dl.sat{color:#2a7bb0}th.sun,.dl.sun{color:var(--warn)}
+td.name{text-align:left;padding-left:8px;white-space:nowrap;position:sticky;left:0;background:var(--panel);border-right:1px solid var(--line);z-index:1}
+.mv{border:0;background:none;color:var(--sub);cursor:pointer;font-size:12px;padding:0 3px}
+.w{width:72px;text-align:right}.h,.sub,.sm{font-size:13px;color:var(--sub)}.sm{font-size:12px}.pay{font-weight:700;white-space:nowrap;padding:0 8px;font-size:13px}.low,.warn{color:var(--warn);font-weight:700}
+.cw{display:flex;flex-direction:column;gap:3px;min-width:88px}
+.c{width:100%;min-width:0;height:38px;border:1px dashed var(--line);border-radius:6px;background:transparent;color:var(--sub);cursor:pointer;font-weight:700}
+.c[data-k=w]{background:var(--ub,var(--e));color:var(--ut,var(--eT));border:0;font-size:12px;font-weight:500}.c[data-k=o]{background:var(--o);color:var(--oT);border:0;font-weight:500}
+.du{width:100%;min-width:0;text-overflow:ellipsis;font-size:11px;padding:2px;background:var(--ub,var(--panel));color:var(--ut,var(--sub))}
+.chip{background:var(--ub);color:var(--ut);padding:1px 8px;border-radius:4px;font-weight:700;font-size:12px}
+.add{display:flex;gap:8px;margin:0 0 14px}.add input{flex:1;max-width:260px}
+.back{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:9}
+.modal{background:var(--panel);border-radius:10px;padding:18px;width:min(92vw,340px)}
+.row{display:flex;gap:10px;margin:12px 0 6px}.row label{flex:1;font-size:13px;color:var(--sub)}.row select{width:100%}
+.acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.drow{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--line)}.drow select{flex:1}.dl{width:6.8em;font-size:14px}
+/* 列の縦線 */
+th,td{border-right:1px solid var(--line)}
+th:last-child,td:last-child{border-right:0}
+.top{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-start;margin-bottom:14px}.top .fin{margin:0}
