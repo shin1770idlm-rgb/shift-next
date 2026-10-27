@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { WD, iso, win, pkey, range, TIMES, hrs, nh, cost, lab, yen } from '../lib/period';
 
-const KEY = 'shift-next-v1', PAL = 10, YEN = 1100;
+const KEY = 'shift-next-v1', PAL = 10, YEN = 1200;
 const JC = [['#bcdcf7', '#0f4c81'], ['#f7c4c4', '#9b1c1c'], ['#fcd5a5', '#8a4a07'], ['#f8ec9c', '#6b5a00'], ['#c3e8c0', '#1d6b27'], ['#dac8f2', '#4b2a8a'], ['#b5eaf0', '#0b5e6b'], ['#f9c6e2', '#8c1d63'], ['#dcef9f', '#4a6a00'], ['#e3cdb4', '#5a3b1f']];
 const CN = ['青', '赤', 'オレンジ', '黄', '緑', '紫', '水色', 'ピンク', '黄緑', '茶'];
 const INIT = {
@@ -13,6 +13,7 @@ const INIT = {
 const pal = x => JC[x.c % PAL];
 const cvars = () => undefined;
 const ucls = x => x ? ' u' + (x.c % PAL) : '';
+const nameBg = p => p.bg != null ? { background: JC[p.bg % PAL][0], color: JC[p.bg % PAL][1] } : undefined;
 const Opts = ({ v, onChange }) => (
   <select value={v} onChange={e => onChange(e.target.value)}>
     {TIMES.map(t => <option key={t} value={t}>{lab(t)}</option>)}
@@ -21,7 +22,7 @@ const Opts = ({ v, onChange }) => (
 
 export default function ShiftApp({ store, name }) {
   const [S, setS] = useState(INIT), [P, setP] = useState(null), [req, setReq] = useState({});
-  const [dlg, setDlg] = useState(null), [nn, setNn] = useState(''), [nr, setNr] = useState('アルバイト'), [nd, setNd] = useState(''), [pick, setPick] = useState(null), [syncErr, setSyncErr] = useState(''), [blocked, setBlocked] = useState(false), [saveMsg, setSaveMsg] = useState('');
+  const [dlg, setDlg] = useState(null), [nn, setNn] = useState(''), [nr, setNr] = useState('アルバイト'), [nd, setNd] = useState(''), [pick, setPick] = useState(null), [syncErr, setSyncErr] = useState(''), [blocked, setBlocked] = useState(false), [saveMsg, setSaveMsg] = useState(''), [ed, setEd] = useState(null), [nbg, setNbg] = useState(null), [nw, setNw] = useState('1200');
   const ver = useRef(0), skip = useRef(true), chain = useRef(Promise.resolve());
   const set = f => setS(s => { const d = structuredClone(s); f(d); return d; });
 
@@ -82,15 +83,23 @@ export default function ShiftApp({ store, name }) {
   const pay0 = mp(range(P.y, P.m, 0)), pay1 = mp(range(P.y, P.m, 1));
   // 社員人件費・目標売上は月間で入力し、前半(15日)・後半(残りの日数)に日割りで配分
   const nd0 = 15, nd1 = new Date(P.y, P.m + 1, 0).getDate() - 15, ndm = nd0 + nd1;
-  const empM = f.emp ?? ((f.emp0 || 0) + (f.emp1 || 0)), salesM = f.sales || 0, daily = empM / ndm;
+  const empM = f.emp ?? ((f.emp0 || 0) + (f.emp1 || 0)), salesM = f.sales || 0;
   // 日ごとの目標売上: A=月間目標÷日数 に曜日係数(月〜木0.75/金・日1.25/土1.5)を掛け、その合計Bと月間目標の差を日数で割ったCを各日に加算（合計が月間目標と一致）
   const FAC = [1.25, 0.75, 0.75, 0.75, 0.75, 1.25, 1.5];
   const mdays = [...range(P.y, P.m, 0), ...range(P.y, P.m, 1)];
+  // 社員の1日の人件費 =（月間の社員人件費 ÷ 全社員の月間出勤日数の合計）× その日に出勤している社員の人数
+  const empCnt = d => S.staff.filter(p => isEmp(p) && hrs(cell(p, d)) > 0).length;
+  const empDays = mdays.reduce((a, d) => a + empCnt(d), 0), empUnit = empDays > 0 ? empM / empDays : 0;
+  const empDay = d => empUnit * empCnt(d);
+  // 年間給与の集計期間: 表示中の月を含む「12月〜翌年11月」
+  const fy = P.m >= 11 ? P.y : P.y - 1, fyDays = [];
+  for (let k = 0; k < 12; k++) { const mm = (11 + k) % 12, yy = fy + Math.floor((11 + k) / 12); fyDays.push(...range(yy, mm, 0), ...range(yy, mm, 1)); }
   const A = salesM / ndm, B = mdays.reduce((a, d) => a + A * FAC[d.getDay()], 0), C = (salesM - B) / ndm;
   const tgt = d => A * FAC[d.getDay()] + C;
-  const dayCost = d => S.staff.reduce((a, p) => a + (isEmp(p) ? 0 : cost(cell(p, d), p.wage)), 0) + daily;
+  const dayCost = d => S.staff.reduce((a, p) => a + (isEmp(p) ? 0 : cost(cell(p, d), p.wage)), 0) + empDay(d);
+  const albaH = d => S.staff.reduce((a, p) => a + (isEmp(p) ? 0 : hrs(cell(p, d))), 0);
   const tsum = days => days.reduce((a, d) => a + tgt(d), 0);
-  const emp0 = daily * nd0, emp1 = daily * nd1, s0 = tsum(range(P.y, P.m, 0)), s1 = tsum(range(P.y, P.m, 1));
+  const emp0 = range(P.y, P.m, 0).reduce((a, d) => a + empDay(d), 0), emp1 = range(P.y, P.m, 1).reduce((a, d) => a + empDay(d), 0), s0 = tsum(range(P.y, P.m, 0)), s1 = tsum(range(P.y, P.m, 1));
   const pt = tsum(ds), pc = ds.reduce((a, d) => a + dayCost(d), 0);
   const t0 = pay0 + emp0, t1 = pay1 + emp1, total = t0 + t1;
   const rt = (c, sl) => sl > 0 ? (c / sl * 100).toFixed(1) + '%' : '—';
@@ -113,7 +122,9 @@ export default function ShiftApp({ store, name }) {
     d.staff = d.staff.filter(x => x.id !== p.id);
     Object.keys(d.cells).forEach(k => { if (k.startsWith(p.id + '|')) { delete d.cells[k]; delete d.duty[k]; } });
   });
-  const addStaff = () => { const n = nn.trim(); if (!n) return; set(d => { d.staff.push({ id: 's' + Date.now(), name: n, role: nr, wage: YEN }); }); setNn(''); };
+  const addStaff = () => { const n = nn.trim(); if (!n) return;
+    const w = nr === 'アルバイト' && nw !== '' ? Math.max(0, +nw || 0) : YEN;
+    set(d => { d.staff.push({ id: 's' + Date.now(), name: n, role: nr, wage: w, ...(nbg != null ? { bg: nbg } : {}) }); }); setNn(''); setNbg(null); };
   const addDuty = () => {
     const n = nd.trim(); if (!n) return;
     if (S.duties.some(x => x.name === n)) return alert('同じ名前のポジションがすでにあります');
@@ -124,6 +135,7 @@ export default function ShiftApp({ store, name }) {
     d.duties = d.duties.filter(y => y.name !== x.name);
     Object.keys(d.duty).forEach(k => { if (d.duty[k] === x.name) delete d.duty[k]; });
   });
+  const saveEd = () => { set(d => { const t = d.staff.find(x => x.id === ed.id); if (!t) return; t.name = ed.name.trim(); t.role = ed.role; if (ed.bg == null) delete t.bg; else t.bg = ed.bg; }); setEd(null); };
   const reflect = () => {
     if (!confirm('提出された希望をシフト表に反映します。同じ日の既存のシフトは上書きされます。よろしいですか？')) return;
     set(d => { S.staff.forEach(p => { const q = rq[p.id]; if (q) Object.entries(q.days).forEach(([k, v]) => { d.cells[p.id + '|' + k] = v; }); }); });
@@ -146,7 +158,8 @@ export default function ShiftApp({ store, name }) {
     tx('勤務h', pad + NW + CW * ds.length + HW / 2, y + HH / 2, '500 12px', '#667784');
     y += HH; ln(y);
     S.staff.forEach(p => {
-      tx(p.name, pad + 8, y + RH / 2 - 7, '500 14px', '#1c2b36', 'left'); tx(p.role || '', pad + 8, y + RH / 2 + 11, '400 11px', '#667784', 'left');
+      if (p.bg != null) { g.fillStyle = JC[p.bg % PAL][0]; g.fillRect(pad, y, NW, RH); }
+      tx(p.name, pad + 8, y + RH / 2 - 7, '500 14px', p.bg != null ? JC[p.bg % PAL][1] : '#1c2b36', 'left'); tx(p.role || '', pad + 8, y + RH / 2 + 11, '400 11px', '#667784', 'left');
       ds.forEach((d, i) => {
         const key = p.id + '|' + iso(d), v = S.cells[key] || '', x = pad + NW + i * CW, u = dutyOf(S.duty[key] || '');
         if (!v) return;
@@ -171,13 +184,13 @@ export default function ShiftApp({ store, name }) {
     }, 'image/jpeg', 0.92);
   };
 
-  let TH = 0, TP = 0;
+  let TH = 0, TP = 0, AT = 0;
   return (
     <main>
       <h1>{name}　シフト表</h1>
       {saveMsg && <div className="warn" style={{ marginBottom: 10 }}>{saveMsg}</div>}
       <div className="top">
-      <section className="fin" style={{ flex: '1 1 460px', maxWidth: 560 }}>
+      <section className="fin" style={{ flex: '1 1 340px', maxWidth: 600 }}>
         <h2>{P.y}年{P.m + 1}月の人件費</h2>
         <label className="r">目標売上（月間・円）<input type="number" min="0" step="10000" value={f.sales || ''} onChange={setFin('sales')} /></label>
         <label className="r">社員の人件費（月間・円）<input type="number" min="0" step="10000" value={f.emp ?? (empM || '')} onChange={setFin('emp')} /></label>
@@ -186,7 +199,7 @@ export default function ShiftApp({ store, name }) {
           <tbody>
             <tr><td style={{ textAlign: 'left' }}>目標売上（曜日調整後）</td><td className="pay">{yen(s0)}</td><td className="pay">{yen(s1)}</td><td className="pay">{yen(salesM)}</td></tr>
             <tr><td style={{ textAlign: 'left' }}>アルバイト（自動）</td><td className="pay">{yen(pay0)}</td><td className="pay">{yen(pay1)}</td><td className="pay">{yen(pay0 + pay1)}</td></tr>
-            <tr><td style={{ textAlign: 'left' }}>社員（日割り）</td><td className="pay">{yen(emp0)}</td><td className="pay">{yen(emp1)}</td><td className="pay">{yen(empM)}</td></tr>
+            <tr><td style={{ textAlign: 'left' }}>社員（出勤日数で配分）</td><td className="pay">{yen(emp0)}</td><td className="pay">{yen(emp1)}</td><td className="pay">{yen(emp0 + emp1)}</td></tr>
             <tr><td style={{ textAlign: 'left', fontWeight: 700 }}>人件費合計</td><td className="pay">{yen(t0)}</td><td className="pay">{yen(t1)}</td><td className="pay">{yen(total)}</td></tr>
             <tr><td style={{ textAlign: 'left', fontWeight: 700 }}>人件費率</td>
               {[[t0, s0], [t1, s1], [total, salesM]].map(([c, sl], i) => <td key={i} className="pay" style={{ fontSize: 16, color: 'var(--accent)' }}>{rt(c, sl)}</td>)}</tr>
@@ -221,10 +234,16 @@ export default function ShiftApp({ store, name }) {
         <section className="fin" style={{ maxWidth: 'none' }}>
           <h2>スタッフの追加</h2>
       <div className="add" style={{ margin: 0, flexWrap: 'wrap' }}>
-        <input value={nn} onChange={e => setNn(e.target.value)} onKeyDown={e => e.key === 'Enter' && addStaff()} placeholder="スタッフ名を入力" maxLength={20} />
+        <input value={nn} onChange={e => setNn(e.target.value)} onKeyDown={e => e.key === 'Enter' && addStaff()} placeholder="スタッフ名を入力" maxLength={20} style={nbg != null ? { background: JC[nbg][0], color: JC[nbg][1] } : undefined} />
         <select value={nr} onChange={e => setNr(e.target.value)}><option>アルバイト</option><option>社員</option></select>
+        {nr === 'アルバイト' && <input type="number" min="0" step="10" value={nw} onChange={e => setNw(e.target.value)} onKeyDown={e => e.key === 'Enter' && addStaff()} placeholder="時給(円)" aria-label="時給（円）" style={{ flex: '0 0 110px', width: 110, textAlign: 'right' }} />}
         <button className="btn main" onClick={addStaff}>スタッフを追加</button>
       </div>
+        <div className="sub" style={{ marginTop: 10 }}>名前の列の背景色（任意）</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+          <button type="button" className="btn" onClick={() => setNbg(null)} style={{ padding: '4px 10px', fontSize: 12, border: nbg == null ? '3px solid var(--ink)' : '1px solid var(--line)' }}>なし</button>
+          {JC.map((c, k) => <button key={k} type="button" onClick={() => setNbg(k)} style={{ background: c[0], color: c[1], padding: '4px 10px', borderRadius: 6, fontWeight: 700, fontSize: 12, cursor: 'pointer', border: nbg === k ? '3px solid var(--ink)' : '1px solid var(--line)' }}>{CN[k]}</button>)}
+        </div>
         {syncErr && <div className="warn" style={{ marginTop: 8 }}>{syncErr}</div>}
         </section>
       </div>
@@ -234,29 +253,35 @@ export default function ShiftApp({ store, name }) {
         <button className="btn" onClick={() => go(-1)}>‹ 前へ</button>
         <div className="t">{P.y}年{P.m + 1}月 {P.h ? `後半（16日〜${ds.at(-1).getDate()}日）` : '前半（1日〜15日）'}</div>
         <button className="btn" onClick={() => go(1)}>次へ ›</button>
-        <button className="btn" onClick={() => { const n = new Date(); setP({ y: n.getFullYear(), m: n.getMonth(), h: n.getDate() > 15 ? 1 : 0 }); }}>今期</button>
+        <button className="btn" onClick={() => { const n = new Date(); setP({ y: n.getFullYear(), m: n.getMonth(), h: n.getDate() > 15 ? 1 : 0 }); }}>現在シフト</button>
         <button className="btn" onClick={exportJpg}>JPG出力</button>
         <button className="btn" onClick={async () => { await fetch(`/api/s/${store}/login`, { method: 'DELETE' }); location.href = `/s/${store}/login`; }}>ログアウト</button>
       </div>
 
-      <div className="wrap"><table>
+      <div className="wrap"><table className="shift">
+        <colgroup><col style={{ width: 124 }} /><col style={{ width: 72 }} />{ds.map(d => <col key={+d} />)}<col style={{ width: 56 }} /><col style={{ width: 78 }} /><col style={{ width: 98 }} /></colgroup>
         <thead><tr>
-          <th style={{ textAlign: 'left', paddingLeft: 8 }}>スタッフ</th><th>区分</th><th>時給(円)</th>
+          <th style={{ textAlign: 'left', paddingLeft: 8 }}>スタッフ</th><th>時給(円)</th>
           {ds.map(d => <th key={+d} className={d.getDay() === 6 ? 'sat' : d.getDay() === 0 ? 'sun' : ''}>{WD[d.getDay()]}<b style={{ display: 'block', fontSize: 16, color: 'var(--ink)' }}>{d.getDate()}</b></th>)}
-          <th>勤務h</th><th>支給額</th>
-        </tr></thead>
+          <th>勤務h</th><th>支給額</th><th>年間給与合計<br /><span style={{ fontSize: 10 }}>{fy}/12〜{fy + 1}/11</span></th>
+        </tr>
+          <tr><td className="name">目標売上</td><td />{ds.map(d => <td key={+d} className="sm">{salesM ? yen(tgt(d)) : '—'}</td>)}<td colSpan={3} className="sm">{salesM ? yen(pt) : '—'}</td></tr></thead>
         <tbody>
           {S.staff.map((p, i) => {
             const t = sum(p, ds, hrs), n = sum(p, ds, nh), pay = isEmp(p) ? 0 : (t + n * 0.25) * p.wage;
             TH += t; TP += pay;
+            const ya = isEmp(p) ? 0 : sum(p, fyDays, v => cost(v, p.wage)); AT += ya;
             return (
               <tr key={p.id}>
-                <td className="name">
-                  <button className="mv" disabled={!i} onClick={() => move(i, i - 1)} aria-label="上へ">▲</button>
-                  <button className="mv" disabled={i === S.staff.length - 1} onClick={() => move(i, i + 1)} aria-label="下へ">▼</button> {p.name}
-                  <button className="mv" onClick={() => del(p)} style={{ marginLeft: 6 }}>削除</button>
+                <td className="name" style={nameBg(p)}>
+                  <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
+                  <div className="nb">
+                    <button className="mv" disabled={!i} onClick={() => move(i, i - 1)} aria-label="上へ">▲</button>
+                    <button className="mv" disabled={i === S.staff.length - 1} onClick={() => move(i, i + 1)} aria-label="下へ">▼</button>
+                    <button className="mv" onClick={() => setEd({ id: p.id, name: p.name, role: p.role, bg: p.bg ?? null })}>編集</button>
+                    <button className="mv" onClick={() => del(p)}>削除</button>
+                  </div>
                 </td>
-                <td><select className="rl" value={p.role} onChange={e => set(d => { d.staff[i].role = e.target.value; })}><option>社員</option><option>アルバイト</option></select></td>
                 <td>{isEmp(p) ? <span className="h">—</span> : <input className="w" type="number" min="0" step="10" value={p.wage} onChange={e => set(d => { d.staff[i].wage = Math.max(0, +e.target.value || 0); })} />}</td>
                 {ds.map(d => {
                   const k = p.id + '|' + iso(d), v = cell(p, d), dn = S.duty[k] || '', dd = dutyOf(dn), w = hrs(v) > 0;
@@ -271,21 +296,21 @@ export default function ShiftApp({ store, name }) {
                 })}
                 <td className="h">{t}h{n > 0 && <><br /><small>深夜{n}h</small></>}</td>
                 <td className="pay">{isEmp(p) ? '—' : yen(pay)}</td>
+                <td className="pay">{isEmp(p) ? '—' : yen(ya)}</td>
               </tr>
             );
           })}
         </tbody>
         <tfoot>
-          <tr><td className="name">出勤人数</td><td /><td />
+          <tr><td className="name">出勤人数</td><td />
             {ds.map(d => { const n = S.staff.filter(p => hrs(cell(p, d)) > 0).length; return <td key={+d} className="h">{n}人</td>; })}
-            <td /><td /></tr>
-          <tr><td className="name">目標売上</td><td /><td />{ds.map(d => <td key={+d} className="sm">{salesM ? yen(tgt(d)) : '—'}</td>)}<td colSpan={2} className="sm">{salesM ? yen(pt) : '—'}</td></tr>
-          <tr><td className="name">人件費（予定）</td><td /><td />{ds.map(d => <td key={+d} className="sm">{yen(dayCost(d))}</td>)}<td colSpan={2} className="sm">{yen(pc)}</td></tr>
-          <tr><td className="name">人件費率</td><td /><td />{ds.map(d => <td key={+d} className="pay" style={{ color: 'var(--accent)' }}>{rt(dayCost(d), tgt(d))}</td>)}<td colSpan={2} className="pay" style={{ color: 'var(--accent)' }}>{rt(pc, pt)}</td></tr>
-          <tr><td className="name">合計</td><td /><td /><td colSpan={ds.length} /><td className="h">{TH}h</td><td className="pay">{yen(TP)}</td></tr>
+            <td /><td /><td /></tr>
+          <tr><td className="name">アルバイト合計時間</td><td />{ds.map(d => <td key={+d} className="sm">{albaH(d)}h</td>)}<td colSpan={3} className="sm">{ds.reduce((a, d) => a + albaH(d), 0)}h</td></tr>
+          <tr><td className="name">人件費（予定）</td><td />{ds.map(d => <td key={+d} className="sm">{yen(dayCost(d))}</td>)}<td colSpan={3} className="sm">{yen(pc)}</td></tr>
+          <tr><td className="name">人件費率</td><td />{ds.map(d => <td key={+d} className="pay" style={{ color: 'var(--accent)' }}>{rt(dayCost(d), tgt(d))}</td>)}<td colSpan={3} className="pay" style={{ color: 'var(--accent)' }}>{rt(pc, pt)}</td></tr>
+          <tr><td className="name">合計</td><td /><td colSpan={ds.length} /><td className="h">{TH}h</td><td className="pay">{yen(TP)}</td><td className="pay">{yen(AT)}</td></tr>
         </tfoot>
       </table></div>
-      <p className="sub">セルをクリックして開始・終了時間を選択（例：13-25.5 ＝ 13:00〜25:30）　22時以降は時給×1.25で計算</p>
 
       <section className="fin wide">
         <h2>{P.y}年{P.m + 1}月 {P.h ? '後半' : '前半'}のシフト希望</h2>
@@ -293,13 +318,27 @@ export default function ShiftApp({ store, name }) {
         <div className="wrap" style={{ marginTop: 8 }}><table>
           <thead><tr><th style={{ textAlign: 'left', paddingLeft: 8 }}>スタッフ</th>{ds.map(d => <th key={+d}>{d.getDate()}</th>)}</tr></thead>
           <tbody>{S.staff.map(p => (
-            <tr key={p.id}><td className="name">{p.name}{!rq[p.id] && <span className="warn" style={{ fontSize: 12 }}>　未提出</span>}</td>
+            <tr key={p.id}><td className="name" style={nameBg(p)}>{p.name}{!rq[p.id] && <span className="warn" style={{ fontSize: 12 }}>　未提出</span>}</td>
               {ds.map(d => <td key={+d} className="sm">{rq[p.id]?.days[iso(d)] || ''}</td>)}</tr>
           ))}</tbody>
         </table></div>
         <div className="acts"><button className="btn main" onClick={reflect}>希望をシフト表に反映</button><button className="btn" onClick={load}>最新の状態に更新</button></div>
       </section>
 
+      {ed && <div className="back" onClick={() => setEd(null)}><div className="modal" onClick={e => e.stopPropagation()}>
+        <b>スタッフの編集</b>
+        <label className="r" style={{ marginTop: 10 }}>名前<input style={{ textAlign: 'left', width: 180 }} value={ed.name} maxLength={20} onChange={e => setEd({ ...ed, name: e.target.value })} /></label>
+        <label className="r">区分<select value={ed.role} onChange={e => setEd({ ...ed, role: e.target.value })}><option>アルバイト</option><option>社員</option></select></label>
+        <div className="sub" style={{ marginTop: 8 }}>名前の列の背景色</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+          <button type="button" className="btn" onClick={() => setEd({ ...ed, bg: null })} style={{ padding: '4px 10px', fontSize: 12, border: ed.bg == null ? '3px solid var(--ink)' : '1px solid var(--line)' }}>なし</button>
+          {JC.map((c, k) => <button key={k} type="button" onClick={() => setEd({ ...ed, bg: k })} style={{ background: c[0], color: c[1], padding: '4px 10px', borderRadius: 6, fontWeight: 700, fontSize: 12, cursor: 'pointer', border: ed.bg === k ? '3px solid var(--ink)' : '1px solid var(--line)' }}>{CN[k]}</button>)}
+        </div>
+        <div className="acts">
+          <button className="btn main" disabled={!ed.name.trim()} onClick={saveEd}>保存</button>
+          <button className="btn" onClick={() => setEd(null)}>キャンセル</button>
+        </div>
+      </div></div>}
       {dlg && <div className="back" onClick={() => setDlg(null)}><div className="modal" onClick={e => e.stopPropagation()}>
         <b>{dlg.t}</b>
         <div className="row">

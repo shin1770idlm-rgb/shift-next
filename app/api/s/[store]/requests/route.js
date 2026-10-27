@@ -5,12 +5,12 @@ import { openPeriod, pkey } from '../../../../../lib/period';
 const err = (error, status = 400) => NextResponse.json({ error }, { status });
 export async function GET(req, { params }) {
   const id = (await params).store;
-  if (!getStore(id)) return err('店舗が見つかりません', 404);
+  if (!await getStore(id)) return err('店舗が見つかりません', 404);
   try { return NextResponse.json((await read(id)).requests); } catch (e) { return fail(e); }
 }
 export async function POST(req, { params }) {
   const id = (await params).store;
-  if (!getStore(id)) return err('店舗が見つかりません', 404);
+  if (!await getStore(id)) return err('店舗が見つかりません', 404);
   try {
     const { staffId, key, days } = await req.json(), d = await read(id), p = openPeriod();
     if (!d.staff.some(s => s.id === staffId)) return err('スタッフが見つかりません');

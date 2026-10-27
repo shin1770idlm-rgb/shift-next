@@ -36,3 +36,20 @@ td.name{text-align:left;padding-left:8px;white-space:nowrap;position:sticky;left
 th,td{border-right:1px solid var(--line)}
 th:last-child,td:last-child{border-right:0}
 .top{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-start;margin-bottom:14px}.top .fin{margin:0}
+/* レイアウト調整: PCでは横スクロールなしで収め、スマホでははみ出さない */
+main{max-width:1600px;padding:16px 12px 40px}
+.shift{table-layout:fixed}
+.shift td,.shift th{padding:4px 2px}
+.shift td.name{white-space:normal;padding-left:6px}
+.shift .w{width:100%;padding:4px 2px;text-align:right}
+.shift .rl{width:100%;padding:4px 0;font-size:12px}
+.shift .c{padding:0}
+.cw{min-width:0}
+.du{padding:2px 0;font-size:11px;text-align:center;text-align-last:center;-webkit-appearance:none;appearance:none;background-image:none;cursor:pointer;border-radius:4px}
+.nb{display:flex;flex-wrap:wrap;gap:2px}
+.top>*{min-width:0;max-width:100%}
+.r{flex-wrap:wrap}.r input{width:130px}
+.fin td.pay{font-size:12px;padding:0 4px}
+.wrap{max-width:100%}
+@media (max-width:1254px){.shift{min-width:1224px}}
+@media (max-width:700px){main{padding:12px 8px 32px}h1{font-size:19px}.bar .t{min-width:0;flex:1 1 100%;order:-1;text-align:center}input:not(.du),select:not(.du){font-size:16px}.fin{padding:10px 12px}}

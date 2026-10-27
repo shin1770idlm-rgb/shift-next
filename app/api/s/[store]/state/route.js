@@ -4,12 +4,12 @@ import { getStore } from '../../../../../lib/stores';
 const err = (error, status) => NextResponse.json({ error }, { status });
 export async function GET(req, { params }) {
   const id = (await params).store;
-  if (!getStore(id)) return err('店舗が見つかりません', 404);
+  if (!await getStore(id)) return err('店舗が見つかりません', 404);
   try { return NextResponse.json(await readState(id)); } catch (e) { return fail(e); }
 }
 export async function PUT(req, { params }) {
   const id = (await params).store;
-  if (!getStore(id)) return err('店舗が見つかりません', 404);
+  if (!await getStore(id)) return err('店舗が見つかりません', 404);
   try {
     const { data, base } = await req.json();
     if (!data || typeof data !== 'object' || JSON.stringify(data).length > 900000) return err('データが不正、または大きすぎます', 400);

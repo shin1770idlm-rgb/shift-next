@@ -1,7 +1,7 @@
 import { allStores } from '../lib/stores';
 export const dynamic = 'force-dynamic';
-export default function Home() {
-  const stores = allStores();
+export default async function Home() {
+  const stores = await allStores();
   const lk = { textDecoration: 'none', display: 'inline-block' };
   return (
     <main style={{ maxWidth: 520 }}>
@@ -16,6 +16,7 @@ export default function Home() {
           </div>
         </section>
       ))}
+      <p className="sub" style={{ marginTop: 24 }}><a href="/admin">全体管理（店舗の追加・削除）</a></p>
     </main>
   );
 }
