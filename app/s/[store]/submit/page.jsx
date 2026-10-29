@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { WD, iso, pkey, range, openPeriod, TIMES, lab } from '../../../../lib/period';
+import { WD, iso, pkey, range, openPeriod, TIMES, lab, isHoliday } from '../../../../lib/period';
 
 export default function Submit() {
   const { store } = useParams();
@@ -55,7 +55,7 @@ export default function Submit() {
             const k = iso(d), w = d.getDay();
             return (
               <div className="drow" key={k}>
-                <span className={'dl ' + (w === 6 ? 'sat' : w === 0 ? 'sun' : '')}>{d.getDate()}日（{WD[w]}）</span>
+                <span className={'dl ' + (w === 0 || isHoliday(d) ? 'sun' : w === 6 ? 'sat' : '')}>{d.getDate()}日（{WD[w]}）</span>
                 <select value={v[k]?.a || ''} onChange={e => set(k, 'a', e.target.value)} aria-label="開始">{opts}</select>
                 <span>〜</span>
                 <select value={v[k]?.b || ''} onChange={e => set(k, 'b', e.target.value)} aria-label="終了">{opts}</select>

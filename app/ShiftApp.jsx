@@ -1,9 +1,9 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { WD, iso, win, pkey, range, TIMES, hrs, nh, cost, lab, yen } from '../lib/period';
+import { WD, iso, win, pkey, range, TIMES, hrs, nh, cost, lab, yen, isHoliday } from '../lib/period';
 
 const KEY = 'shift-next-v1', PAL = 10, YEN = 1200;
-const JC = [['#bcdcf7', '#0f4c81'], ['#f7c4c4', '#9b1c1c'], ['#fcd5a5', '#8a4a07'], ['#f8ec9c', '#6b5a00'], ['#c3e8c0', '#1d6b27'], ['#dac8f2', '#4b2a8a'], ['#b5eaf0', '#0b5e6b'], ['#f9c6e2', '#8c1d63'], ['#dcef9f', '#4a6a00'], ['#e3cdb4', '#5a3b1f']];
+const JC = [['#2b7bc4', '#000000'], ['#cf3f3f', '#000000'], ['#f59a2e', '#000000'], ['#f5d742', '#000000'], ['#2e8540', '#000000'], ['#7e57c2', '#000000'], ['#3fb8c8', '#000000'], ['#d6458f', '#000000'], ['#a4cf3f', '#000000'], ['#9a6b3f', '#000000']];
 const CN = ['青', '赤', 'オレンジ', '黄', '緑', '紫', '水色', 'ピンク', '黄緑', '茶'];
 const INIT = {
   staff: [], cells: {}, duty: {}, fin: {}, last: { a: 13, b: 22 },
@@ -22,9 +22,34 @@ const Opts = ({ v, onChange }) => (
 
 export default function ShiftApp({ store, name }) {
   const [S, setS] = useState(INIT), [P, setP] = useState(null), [req, setReq] = useState({});
-  const [dlg, setDlg] = useState(null), [nn, setNn] = useState(''), [nr, setNr] = useState('アルバイト'), [nd, setNd] = useState(''), [pick, setPick] = useState(null), [syncErr, setSyncErr] = useState(''), [blocked, setBlocked] = useState(false), [saveMsg, setSaveMsg] = useState(''), [ed, setEd] = useState(null), [nbg, setNbg] = useState(null), [nw, setNw] = useState('1200');
-  const ver = useRef(0), skip = useRef(true), chain = useRef(Promise.resolve());
-  const set = f => setS(s => { const d = structuredClone(s); f(d); return d; });
+  const [dlg, setDlg] = useState(null), [nn, setNn] = useState(''), [nr, setNr] = useState('アルバイト'), [nd, setNd] = useState(''), [pick, setPick] = useState(null), [syncErr, setSyncErr] = useState(''), [blocked, setBlocked] = useState(false), [saveMsg, setSaveMsg] = useState(''), [ed, setEd] = useState(null), [nbg, setNbg] = useState(null), [nw, setNw] = useState('1200'), [sel, setSel] = useState([]), [bw, setBw] = useState(''), [hN, setHN] = useState(0), [fN, setFN] = useState(0);
+  const ver = useRef(0), skip = useRef(true), chain = useRef(Promise.resolve()), hist = useRef([]), Sref = useRef(INIT), lastTag = useRef({ t: '', at: 0 }), fut = useRef([]);
+  // 元に戻す用の履歴（最大50件）。同じ入力欄への連続入力(tag)は、1回の操作にまとめる
+  const set = (f, tag) => {
+    const d = structuredClone(Sref.current); f(d);
+    const now = Date.now(), lt = lastTag.current;
+    if (!(tag && lt.t === tag && now - lt.at < 1500)) { hist.current.push(Sref.current); if (hist.current.length > 50) hist.current.shift(); setHN(hist.current.length); }
+    lastTag.current = { t: tag || '', at: now };
+    fut.current = []; setFN(0);
+    Sref.current = d; setS(d);
+  };
+  const undo = () => {
+    const prev = hist.current.pop(); if (!prev) return;
+    lastTag.current = { t: '', at: 0 }; fut.current.push(Sref.current); Sref.current = prev; setS(prev); setHN(hist.current.length); setFN(fut.current.length);
+  };
+  const redo = () => {
+    const nxt = fut.current.pop(); if (!nxt) return;
+    lastTag.current = { t: '', at: 0 }; hist.current.push(Sref.current); Sref.current = nxt; setS(nxt); setHN(hist.current.length); setFN(fut.current.length);
+  };
+  useEffect(() => { Sref.current = S; }, [S]);
+  useEffect(() => {
+    const h = e => {
+      if (!(e.ctrlKey || e.metaKey) || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+      const kk = e.key.toLowerCase();
+      if (kk === 'z' && !e.shiftKey) { e.preventDefault(); undo(); } else if ((kk === 'z' && e.shiftKey) || kk === 'y') { e.preventDefault(); redo(); }
+    };
+    window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h);
+  });
 
   // データはサーバーに保存し、どの端末からでも同じ内容を表示する
   useEffect(() => {
@@ -87,10 +112,21 @@ export default function ShiftApp({ store, name }) {
   // 日ごとの目標売上: A=月間目標÷日数 に曜日係数(月〜木0.75/金・日1.25/土1.5)を掛け、その合計Bと月間目標の差を日数で割ったCを各日に加算（合計が月間目標と一致）
   const FAC = [1.25, 0.75, 0.75, 0.75, 0.75, 1.25, 1.5];
   const mdays = [...range(P.y, P.m, 0), ...range(P.y, P.m, 1)];
-  // 社員の1日の人件費 =（月間の社員人件費 ÷ 全社員の月間出勤日数の合計）× その日に出勤している社員の人数
-  const empCnt = d => S.staff.filter(p => isEmp(p) && hrs(cell(p, d)) > 0).length;
-  const empDays = mdays.reduce((a, d) => a + empCnt(d), 0), empUnit = empDays > 0 ? empM / empDays : 0;
-  const empDay = d => empUnit * empCnt(d);
+  // 社員人件費の算出
+  // 1) avg = 月間の社員人件費 ÷ 月間日数（1日あたりの平均）
+  // 2) 前半 b0 = avg × 前半の日数、後半 b1 = avg × 後半の日数
+  // 3) c0 = b0 ÷ 前半の全社員の出勤日数合計、c1 = b1 ÷ 後半の全社員の出勤日数合計
+  // 4) 各社員の1日 = c × 係数（勤務10時間以上: 1／5時間以上10時間未満: 0.5／5時間未満: 0）
+  // 5) その日の全社員を合計 → シフト表の下と、上部の前半・後半の合計に出力
+  const avg = empM / ndm, b0 = avg * nd0, b1 = avg * nd1;
+  const halfOf = d => (d.getDate() > 15 ? 1 : 0);
+  const attend = (p, d) => isEmp(p) && hrs(cell(p, d)) > 0;
+  const daysIn = h => range(P.y, P.m, h).reduce((x, d) => x + S.staff.filter(p => attend(p, d)).length, 0);
+  const ed0 = daysIn(0), ed1 = daysIn(1);
+  const c0 = ed0 > 0 ? b0 / ed0 : 0, c1 = ed1 > 0 ? b1 / ed1 : 0;
+  const empFactor = hh => (hh >= 10 ? 1 : hh >= 5 ? 0.5 : 0);
+  const empOf = (p, d) => (isEmp(p) ? (halfOf(d) ? c1 : c0) * empFactor(hrs(cell(p, d))) : 0);
+  const empDay = d => S.staff.reduce((x, p) => x + empOf(p, d), 0);
   // 年間給与の集計期間: 表示中の月を含む「12月〜翌年11月」
   const fy = P.m >= 11 ? P.y : P.y - 1, fyDays = [];
   for (let k = 0; k < 12; k++) { const mm = (11 + k) % 12, yy = fy + Math.floor((11 + k) / 12); fyDays.push(...range(yy, mm, 0), ...range(yy, mm, 1)); }
@@ -104,7 +140,7 @@ export default function ShiftApp({ store, name }) {
   const t0 = pay0 + emp0, t1 = pay1 + emp1, total = t0 + t1;
   const rt = (c, sl) => sl > 0 ? (c / sl * 100).toFixed(1) + '%' : '—';
   const go = n => setP(({ y, m, h }) => { const a = y * 24 + m * 2 + h + n; return { y: Math.floor(a / 24), m: Math.floor((a % 24) / 2), h: a % 2 }; });
-  const setFin = k => e => set(d => { d.fin[P.y + '-' + P.m] = { ...f, [k]: Math.max(0, +e.target.value || 0) }; });
+  const setFin = k => e => set(d => { d.fin[P.y + '-' + P.m] = { ...f, [k]: Math.max(0, +e.target.value || 0) }; }, 'fin:' + k);
 
   const open = (p, d) => {
     const v = cell(p, d), [a, b] = v.includes('-') ? v.split('-').map(Number) : [S.last.a, S.last.b];
@@ -136,52 +172,81 @@ export default function ShiftApp({ store, name }) {
     Object.keys(d.duty).forEach(k => { if (d.duty[k] === x.name) delete d.duty[k]; });
   });
   const saveEd = () => { set(d => { const t = d.staff.find(x => x.id === ed.id); if (!t) return; t.name = ed.name.trim(); t.role = ed.role; if (ed.bg == null) delete t.bg; else t.bg = ed.bg; }); setEd(null); };
-  const reflect = () => {
-    if (!confirm('提出された希望をシフト表に反映します。同じ日の既存のシフトは上書きされます。よろしいですか？')) return;
-    set(d => { S.staff.forEach(p => { const q = rq[p.id]; if (q) Object.entries(q.days).forEach(([k, v]) => { d.cells[p.id + '|' + k] = v; }); }); });
+  // 選択（チェックボックス）と一括操作
+  const selected = S.staff.filter(p => sel.includes(p.id));
+  const toggle = id => setSel(v => (v.includes(id) ? v.filter(x => x !== id) : [...v, id]));
+  const allOn = S.staff.length > 0 && selected.length === S.staff.length;
+  const toggleAll = () => setSel(allOn ? [] : S.staff.map(p => p.id));
+  const resetFor = (list, label) => {
+    if (!list.length) return;
+    if (!confirm(`${label}の${P.y}年${P.m + 1}月 ${P.h ? '後半' : '前半'}のシフト（時間とポジション）をすべて消します。元に戻せません。よろしいですか？`)) return;
+    set(d => { list.forEach(p => ds.forEach(x => { const k = p.id + '|' + iso(x); delete d.cells[k]; delete d.duty[k]; })); });
+  };
+  const resetAll = () => resetFor(S.staff, '全スタッフ');
+  const resetSel = () => resetFor(selected, `選択中の${selected.length}人`);
+  const setWages = () => {
+    if (bw === '') return alert('変更後の時給を入力してください');
+    const w = Math.max(0, +bw || 0), t = selected.filter(p => !isEmp(p));
+    if (!t.length) return alert('アルバイトが選択されていません（社員は時給を設定しません）');
+    const skip = selected.length - t.length;
+    if (!confirm(`選択中のアルバイト${t.length}人の時給を${w}円に変更します。${skip ? `（社員${skip}人は対象外です）` : ''}よろしいですか？`)) return;
+    set(d => { d.staff.forEach(p => { if (sel.includes(p.id) && p.role !== '社員') p.wage = w; }); });
+  };
+  const reflect = (list = S.staff) => {
+    if (!list.some(p => rq[p.id])) return alert('反映できる希望がありません（提出済みのスタッフがいません）');
+    if (!confirm(`提出された希望を、${list.length === S.staff.length ? '全スタッフ' : `選択中の${list.length}人`}のシフト表に反映します。同じ日の既存のシフトは上書きされます。よろしいですか？`)) return;
+    set(d => { list.forEach(p => { const q = rq[p.id]; if (q) Object.entries(q.days).forEach(([k, v]) => { d.cells[p.id + '|' + k] = v; }); }); });
   };
 
-  const exportJpg = () => {
-    const NW = 116, CW = 76, HW = 60, RH = 46, HH = 44, TT = 56, pad = 16, k = 2, n = S.staff.length;
-    const W = pad * 2 + NW + CW * ds.length + HW, H = pad * 2 + TT + HH + RH * n + 34 + 44;
-    const cv = document.createElement('canvas'); cv.width = W * k; cv.height = H * k;
-    const g = cv.getContext('2d'); g.scale(k, k);
+  // JPG出力: 10人ごとに画像を分ける（日付の見出し行は、どの画像にも入れる）
+  const exportJpg = async () => {
+    const NW = 116, CW = 76, HW = 60, RH = 46, HH = 44, TT = 56, pad = 16, k = 2, PER = 10;
+    const pages = Math.max(1, Math.ceil(S.staff.length / PER));
+    const base = `shift_${P.y}-${String(P.m + 1).padStart(2, '0')}_${P.h + 1}`;
     const F = '"Hiragino Sans","Yu Gothic",Meiryo,sans-serif';
-    const tx = (t, x, y, f, co, al, mw) => { g.font = f + ' ' + F; g.fillStyle = co; g.textAlign = al || 'center'; g.textBaseline = 'middle'; g.fillText(t, x, y, mw); };
-    const ln = y => { g.strokeStyle = '#d6dee2'; g.lineWidth = 1; g.beginPath(); g.moveTo(pad, y); g.lineTo(W - pad, y); g.stroke(); };
-    const box = (x, y, w, h, co) => { g.fillStyle = co; g.beginPath(); if (g.roundRect) g.roundRect(x, y, w, h, 5); else g.rect(x, y, w, h); g.fill(); };
-    g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
-    let y = pad;
-    tx(`${P.y}年${P.m + 1}月 ${P.h ? '後半' : '前半'}（${ds[0].getDate()}日〜${ds.at(-1).getDate()}日）シフト表`, pad, y + TT / 2, '700 20px', '#1c2b36', 'left'); y += TT; const top = y;
-    tx('スタッフ', pad + 8, y + HH / 2, '500 12px', '#667784', 'left');
-    ds.forEach((d, i) => { const x = pad + NW + i * CW, w = d.getDay(); tx(WD[w], x + CW / 2, y + 13, '500 12px', w === 6 ? '#2a7bb0' : w === 0 ? '#c0392b' : '#667784'); tx(String(d.getDate()), x + CW / 2, y + 31, '700 15px', '#1c2b36'); });
-    tx('勤務h', pad + NW + CW * ds.length + HW / 2, y + HH / 2, '500 12px', '#667784');
-    y += HH; ln(y);
-    S.staff.forEach(p => {
-      if (p.bg != null) { g.fillStyle = JC[p.bg % PAL][0]; g.fillRect(pad, y, NW, RH); }
-      tx(p.name, pad + 8, y + RH / 2 - 7, '500 14px', p.bg != null ? JC[p.bg % PAL][1] : '#1c2b36', 'left'); tx(p.role || '', pad + 8, y + RH / 2 + 11, '400 11px', '#667784', 'left');
-      ds.forEach((d, i) => {
-        const key = p.id + '|' + iso(d), v = S.cells[key] || '', x = pad + NW + i * CW, u = dutyOf(S.duty[key] || '');
-        if (!v) return;
-        if (v === '休') { box(x + 3, y + 4, CW - 6, RH - 8, '#e4e8ea'); tx('休', x + CW / 2, y + RH / 2, '500 13px', '#7b8a95'); return; }
-        const q = u ? pal(u) : JC[0]; box(x + 3, y + 4, CW - 6, RH - 8, q[0]);
-        tx(v, x + CW / 2, y + RH / 2 - (u ? 7 : 0), '700 12px', q[1]); if (u) tx(S.duty[key], x + CW / 2, y + RH / 2 + 10, '500 11px', q[1], 'center', CW - 10);
+    for (let pg = 0; pg < pages; pg++) {
+      const list = S.staff.slice(pg * PER, (pg + 1) * PER), last = pg === pages - 1, n = list.length;
+      const W = pad * 2 + NW + CW * ds.length + HW, H = pad * 2 + TT + HH + RH * n + (last ? 34 : 0) + 44;
+      const cv = document.createElement('canvas'); cv.width = W * k; cv.height = H * k;
+      const g = cv.getContext('2d'); g.scale(k, k);
+      const tx = (t, x, y, f, co, al, mw) => { g.font = f + ' ' + F; g.fillStyle = co; g.textAlign = al || 'center'; g.textBaseline = 'middle'; g.fillText(t, x, y, mw); };
+      const ln = y => { g.strokeStyle = '#7f93a0'; g.lineWidth = 2; g.beginPath(); g.moveTo(pad, y); g.lineTo(W - pad, y); g.stroke(); };
+      const box = (x, y, w, h, co) => { g.fillStyle = co; g.beginPath(); if (g.roundRect) g.roundRect(x, y, w, h, 5); else g.rect(x, y, w, h); g.fill(); };
+      g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
+      let y = pad;
+      tx(`${P.y}年${P.m + 1}月 ${P.h ? '後半' : '前半'}（${ds[0].getDate()}日〜${ds.at(-1).getDate()}日）シフト表${pages > 1 ? `（${pg + 1}/${pages}）` : ''}`, W / 2, y + TT / 2, '700 20px', '#000', 'center'); y += TT; const top = y;
+      tx('スタッフ', pad + NW / 2, y + HH / 2, '500 12px', '#000');
+      ds.forEach((d, i) => { const x = pad + NW + i * CW, w = d.getDay(); tx(WD[w], x + CW / 2, y + 13, '500 12px', isHoliday(d) || w === 0 ? '#c0392b' : '#000'); tx(String(d.getDate()), x + CW / 2, y + 31, '700 15px', '#000'); });
+      tx('勤務h', pad + NW + CW * ds.length + HW / 2, y + HH / 2, '500 12px', '#000');
+      y += HH; ln(y);
+      list.forEach(p => {
+        if (p.bg != null) { g.fillStyle = JC[p.bg % PAL][0]; g.fillRect(pad, y, NW, RH); }
+        tx(p.name, pad + NW / 2, y + RH / 2 - 7, '500 14px', p.bg != null ? JC[p.bg % PAL][1] : '#000', 'center', NW - 8); tx(p.role || '', pad + NW / 2, y + RH / 2 + 11, '400 11px', p.bg != null ? JC[p.bg % PAL][1] : '#000');
+        ds.forEach((d, i) => {
+          const key = p.id + '|' + iso(d), v = S.cells[key] || '', x = pad + NW + i * CW, u = dutyOf(S.duty[key] || '');
+          if (!v) return;
+          if (v === '休') { box(x + 3, y + 4, CW - 6, RH - 8, '#c9d1d6'); tx('休', x + CW / 2, y + RH / 2, '500 13px', '#000'); return; }
+          const q = u ? pal(u) : JC[0]; box(x + 3, y + 4, CW - 6, RH - 8, q[0]);
+          tx(v, x + CW / 2, y + RH / 2 - (u ? 7 : 0), '700 12px', q[1]); if (u) tx(S.duty[key], x + CW / 2, y + RH / 2 + 10, '500 11px', q[1], 'center', CW - 10);
+        });
+        tx(sum(p, ds, hrs) + 'h', pad + NW + CW * ds.length + HW / 2, y + RH / 2, '500 13px', '#000');
+        y += RH; ln(y);
       });
-      tx(sum(p, ds, hrs) + 'h', pad + NW + CW * ds.length + HW / 2, y + RH / 2, '500 13px', '#667784');
-      y += RH; ln(y);
-    });
-    tx('出勤人数', pad + 8, y + 17, '500 12px', '#667784', 'left');
-    ds.forEach((d, i) => { const m = S.staff.filter(p => hrs(cell(p, d)) > 0).length; tx(m + '人', pad + NW + i * CW + CW / 2, y + 17, '500 12px', '#667784'); });
-    y += 34;
-    g.strokeStyle = '#d6dee2'; g.lineWidth = 1;
-    for (let i = 0; i <= ds.length; i++) { const lx = pad + NW + i * CW; g.beginPath(); g.moveTo(lx, top); g.lineTo(lx, y); g.stroke(); }
-    let x = pad;
-    S.duties.forEach(t => { const q = pal(t); g.font = '700 12px ' + F; const w = Math.max(64, g.measureText(t.name).width + 20); box(x, y + 8, w, 22, q[0]); tx(t.name, x + w / 2, y + 19, '700 12px', q[1]); x += w + 8; });
-    cv.toBlob(b => {
-      const a = document.createElement('a'); a.href = URL.createObjectURL(b);
-      a.download = `shift_${P.y}-${String(P.m + 1).padStart(2, '0')}_${P.h + 1}.jpg`; a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    }, 'image/jpeg', 0.92);
+      if (last) { // 出勤人数は全員分なので、最後の画像にだけ入れる
+        tx(pages > 1 ? '出勤人数（全員）' : '出勤人数', pad + NW / 2, y + 17, '500 12px', '#000');
+        ds.forEach((d, i) => { const m = S.staff.filter(p => hrs(cell(p, d)) > 0).length; tx(m + '人', pad + NW + i * CW + CW / 2, y + 17, '500 12px', '#000'); });
+        y += 34;
+      }
+      g.strokeStyle = '#7f93a0'; g.lineWidth = 2;
+      for (let i = 0; i <= ds.length; i++) { const lx = pad + NW + i * CW; g.beginPath(); g.moveTo(lx, top); g.lineTo(lx, y); g.stroke(); }
+      let x = pad;
+      S.duties.forEach(t => { const q = pal(t); g.font = '700 12px ' + F; const w = Math.max(64, g.measureText(t.name).width + 20); box(x, y + 8, w, 22, q[0]); tx(t.name, x + w / 2, y + 19, '700 12px', q[1]); x += w + 8; });
+      const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.92));
+      const link = document.createElement('a'); link.href = URL.createObjectURL(blob);
+      link.download = pages > 1 ? `${base}_${pg + 1}.jpg` : `${base}.jpg`; link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+      if (!last) await new Promise(r => setTimeout(r, 400));
+    }
   };
 
   let TH = 0, TP = 0, AT = 0;
@@ -199,10 +264,10 @@ export default function ShiftApp({ store, name }) {
           <tbody>
             <tr><td style={{ textAlign: 'left' }}>目標売上（曜日調整後）</td><td className="pay">{yen(s0)}</td><td className="pay">{yen(s1)}</td><td className="pay">{yen(salesM)}</td></tr>
             <tr><td style={{ textAlign: 'left' }}>アルバイト（自動）</td><td className="pay">{yen(pay0)}</td><td className="pay">{yen(pay1)}</td><td className="pay">{yen(pay0 + pay1)}</td></tr>
-            <tr><td style={{ textAlign: 'left' }}>社員（出勤日数で配分）</td><td className="pay">{yen(emp0)}</td><td className="pay">{yen(emp1)}</td><td className="pay">{yen(emp0 + emp1)}</td></tr>
+            <tr><td style={{ textAlign: 'left' }}>社員（勤務時間で配分）</td><td className="pay">{yen(emp0)}</td><td className="pay">{yen(emp1)}</td><td className="pay">{yen(emp0 + emp1)}</td></tr>
             <tr><td style={{ textAlign: 'left', fontWeight: 700 }}>人件費合計</td><td className="pay">{yen(t0)}</td><td className="pay">{yen(t1)}</td><td className="pay">{yen(total)}</td></tr>
             <tr><td style={{ textAlign: 'left', fontWeight: 700 }}>人件費率</td>
-              {[[t0, s0], [t1, s1], [total, salesM]].map(([c, sl], i) => <td key={i} className="pay" style={{ fontSize: 16, color: 'var(--accent)' }}>{rt(c, sl)}</td>)}</tr>
+              {[[t0, s0], [t1, s1], [total, salesM]].map(([c, sl], i) => <td key={i} className="pay" style={{ fontSize: 16, color: '#000' }}>{rt(c, sl)}</td>)}</tr>
           </tbody>
         </table></div>
       </section>
@@ -254,15 +319,26 @@ export default function ShiftApp({ store, name }) {
         <div className="t">{P.y}年{P.m + 1}月 {P.h ? `後半（16日〜${ds.at(-1).getDate()}日）` : '前半（1日〜15日）'}</div>
         <button className="btn" onClick={() => go(1)}>次へ ›</button>
         <button className="btn" onClick={() => { const n = new Date(); setP({ y: n.getFullYear(), m: n.getMonth(), h: n.getDate() > 15 ? 1 : 0 }); }}>現在シフト</button>
+        <button className="btn" disabled={!hN} onClick={undo} title="直前の操作を取り消します（Ctrl+Z）">↩ 戻る</button>
+        <button className="btn" disabled={!fN} onClick={redo} title="取り消した操作をやり直します（Ctrl+Y または Ctrl+Shift+Z）">進む ↪</button>
         <button className="btn" onClick={exportJpg}>JPG出力</button>
+        <button className="btn" onClick={resetAll}>表示中のシフトを一括リセット</button>
         <button className="btn" onClick={async () => { await fetch(`/api/s/${store}/login`, { method: 'DELETE' }); location.href = `/s/${store}/login`; }}>ログアウト</button>
       </div>
 
-      <div className="wrap"><table className="shift">
+      <div className="bar" style={{ gap: 8 }}>
+        <b style={{ fontSize: 14 }}>選択中：{selected.length}人</b>
+        <input className="w" type="number" min="0" step="10" style={{ width: 90 }} value={bw} onChange={e => setBw(e.target.value)} placeholder="時給(円)" aria-label="一括で変更する時給" />
+        <button className="btn" disabled={!selected.length} onClick={setWages}>選択中の時給を一括変更</button>
+        <button className="btn" disabled={!selected.length} onClick={resetSel}>選択中のシフトを一括リセット</button>
+        <button className="btn" disabled={!selected.length} onClick={() => reflect(selected)}>選択中に希望シフトを一括反映</button>
+      </div>
+
+      <div className="wrap scroll"><table className="shift">
         <colgroup><col style={{ width: 124 }} /><col style={{ width: 72 }} />{ds.map(d => <col key={+d} />)}<col style={{ width: 56 }} /><col style={{ width: 78 }} /><col style={{ width: 98 }} /></colgroup>
         <thead><tr>
-          <th style={{ textAlign: 'left', paddingLeft: 8 }}>スタッフ</th><th>時給(円)</th>
-          {ds.map(d => <th key={+d} className={d.getDay() === 6 ? 'sat' : d.getDay() === 0 ? 'sun' : ''}>{WD[d.getDay()]}<b style={{ display: 'block', fontSize: 16, color: 'var(--ink)' }}>{d.getDate()}</b></th>)}
+          <th style={{ textAlign: 'left', paddingLeft: 8 }}><label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, cursor: 'pointer' }}><input type="checkbox" checked={allOn} onChange={toggleAll} aria-label="全員を選択" />スタッフ</label></th><th>時給(円)</th>
+          {ds.map(d => <th key={+d} className={d.getDay() === 0 || isHoliday(d) ? 'sun' : d.getDay() === 6 ? 'sat' : ''}>{WD[d.getDay()]}<b style={{ display: 'block', fontSize: 16, color: 'var(--ink)' }}>{d.getDate()}</b></th>)}
           <th>勤務h</th><th>支給額</th><th>年間給与合計<br /><span style={{ fontSize: 10 }}>{fy}/12〜{fy + 1}/11</span></th>
         </tr>
           <tr><td className="name">目標売上</td><td />{ds.map(d => <td key={+d} className="sm">{salesM ? yen(tgt(d)) : '—'}</td>)}<td colSpan={3} className="sm">{salesM ? yen(pt) : '—'}</td></tr></thead>
@@ -274,7 +350,7 @@ export default function ShiftApp({ store, name }) {
             return (
               <tr key={p.id}>
                 <td className="name" style={nameBg(p)}>
-                  <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
+                  <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontWeight: 500, cursor: 'pointer' }}><input type="checkbox" checked={sel.includes(p.id)} onChange={() => toggle(p.id)} aria-label={`${p.name}を選択`} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span></label>
                   <div className="nb">
                     <button className="mv" disabled={!i} onClick={() => move(i, i - 1)} aria-label="上へ">▲</button>
                     <button className="mv" disabled={i === S.staff.length - 1} onClick={() => move(i, i + 1)} aria-label="下へ">▼</button>
@@ -282,12 +358,12 @@ export default function ShiftApp({ store, name }) {
                     <button className="mv" onClick={() => del(p)}>削除</button>
                   </div>
                 </td>
-                <td>{isEmp(p) ? <span className="h">—</span> : <input className="w" type="number" min="0" step="10" value={p.wage} onChange={e => set(d => { d.staff[i].wage = Math.max(0, +e.target.value || 0); })} />}</td>
+                <td>{isEmp(p) ? <span className="h">—</span> : <input className="w" type="number" min="0" step="10" value={p.wage} onChange={e => set(d => { d.staff[i].wage = Math.max(0, +e.target.value || 0); }, 'wage:' + i)} />}</td>
                 {ds.map(d => {
                   const k = p.id + '|' + iso(d), v = cell(p, d), dn = S.duty[k] || '', dd = dutyOf(dn), w = hrs(v) > 0;
                   return (
                     <td key={k}><div className={'cw' + (w ? ucls(dd) : '')} style={w ? cvars(dd) : undefined}>
-                      <button className="c" data-k={v ? (v === '休' ? 'o' : 'w') : ''} onClick={() => open(p, d)}>{v || '＋'}</button>
+                      <button className="c" data-k={v ? (v === '休' ? 'o' : 'w') : ''} title={isEmp(p) && w ? `社員人件費 ${yen(empOf(p, d))}` : undefined} onClick={() => open(p, d)}>{v || '＋'}</button>
                       {w && <select className="du" value={dn} aria-label="ポジション" onChange={e => set(x => { if (e.target.value) x.duty[k] = e.target.value; else delete x.duty[k]; })}>
                         <option value="">ポジション</option>{S.duties.map(x => <option key={x.name}>{x.name}</option>)}
                       </select>}
@@ -306,8 +382,9 @@ export default function ShiftApp({ store, name }) {
             {ds.map(d => { const n = S.staff.filter(p => hrs(cell(p, d)) > 0).length; return <td key={+d} className="h">{n}人</td>; })}
             <td /><td /><td /></tr>
           <tr><td className="name">アルバイト合計時間</td><td />{ds.map(d => <td key={+d} className="sm">{albaH(d)}h</td>)}<td colSpan={3} className="sm">{ds.reduce((a, d) => a + albaH(d), 0)}h</td></tr>
+          <tr><td className="name">社員人件費</td><td />{ds.map(d => <td key={+d} className="sm">{empDay(d) ? yen(empDay(d)) : '—'}</td>)}<td colSpan={3} className="sm">{yen(ds.reduce((x, d) => x + empDay(d), 0))}</td></tr>
           <tr><td className="name">人件費（予定）</td><td />{ds.map(d => <td key={+d} className="sm">{yen(dayCost(d))}</td>)}<td colSpan={3} className="sm">{yen(pc)}</td></tr>
-          <tr><td className="name">人件費率</td><td />{ds.map(d => <td key={+d} className="pay" style={{ color: 'var(--accent)' }}>{rt(dayCost(d), tgt(d))}</td>)}<td colSpan={3} className="pay" style={{ color: 'var(--accent)' }}>{rt(pc, pt)}</td></tr>
+          <tr><td className="name">人件費率</td><td />{ds.map(d => <td key={+d} className="pay" style={{ color: '#000' }}>{rt(dayCost(d), tgt(d))}</td>)}<td colSpan={3} className="pay" style={{ color: '#000' }}>{rt(pc, pt)}</td></tr>
           <tr><td className="name">合計</td><td /><td colSpan={ds.length} /><td className="h">{TH}h</td><td className="pay">{yen(TP)}</td><td className="pay">{yen(AT)}</td></tr>
         </tfoot>
       </table></div>
@@ -322,7 +399,7 @@ export default function ShiftApp({ store, name }) {
               {ds.map(d => <td key={+d} className="sm">{rq[p.id]?.days[iso(d)] || ''}</td>)}</tr>
           ))}</tbody>
         </table></div>
-        <div className="acts"><button className="btn main" onClick={reflect}>希望をシフト表に反映</button><button className="btn" onClick={load}>最新の状態に更新</button></div>
+        <div className="acts"><button className="btn main" onClick={() => reflect()}>希望をシフト表に反映</button><button className="btn" onClick={load}>最新の状態に更新</button></div>
       </section>
 
       {ed && <div className="back" onClick={() => setEd(null)}><div className="modal" onClick={e => e.stopPropagation()}>

@@ -1,5 +1,6 @@
-:root{--bg:#eef2f3;--panel:#fff;--ink:#1c2b36;--sub:#667784;--line:#d6dee2;--accent:#1f5f7a;--warn:#c0392b;--e:#cfe8f5;--eT:#12506e;--o:#e4e8ea;--oT:#7b8a95}
-.u0{--ub:#bcdcf7;--ut:#0f4c81}.u1{--ub:#f7c4c4;--ut:#9b1c1c}.u2{--ub:#fcd5a5;--ut:#8a4a07}.u3{--ub:#f8ec9c;--ut:#6b5a00}.u4{--ub:#c3e8c0;--ut:#1d6b27}.u5{--ub:#dac8f2;--ut:#4b2a8a}.u6{--ub:#b5eaf0;--ut:#0b5e6b}.u7{--ub:#f9c6e2;--ut:#8c1d63}.u8{--ub:#dcef9f;--ut:#4a6a00}.u9{--ub:#e3cdb4;--ut:#5a3b1f}
+:root{--bg:#eef2f3;--panel:#fff;--ink:#1c2b36;--sub:#667784;--line:#d6dee2;--accent:#1f5f7a;--warn:#c0392b;--e:#8fc3ee;--eT:#0c2f52;--o:#c9d1d6;--oT:#4a5a66}
+.u0{--ub:#2b7bc4;--ut:#000000}.u1{--ub:#cf3f3f;--ut:#000000}.u2{--ub:#f59a2e;--ut:#000000}.u3{--ub:#f5d742;--ut:#000000}.u4{--ub:#2e8540;--ut:#000000}.u5{--ub:#7e57c2;--ut:#000000}.u6{--ub:#3fb8c8;--ut:#000000}.u7{--ub:#d6458f;--ut:#000000}.u8{--ub:#a4cf3f;--ut:#000000}.u9{--ub:#9a6b3f;--ut:#000000}
+
 
 
 *{box-sizing:border-box}
@@ -53,3 +54,22 @@ main{max-width:1600px;padding:16px 12px 40px}
 .wrap{max-width:100%}
 @media (max-width:1254px){.shift{min-width:1224px}}
 @media (max-width:700px){main{padding:12px 8px 32px}h1{font-size:19px}.bar .t{min-width:0;flex:1 1 100%;order:-1;text-align:center}input:not(.du),select:not(.du){font-size:16px}.fin{padding:10px 12px}}
+/* シフト表: 日付行を固定してスクロール／線を太く／行を狭く */
+:root{--grid:#7f93a0;--hh:42px}
+.wrap.scroll{max-height:78vh;overflow:auto;border:2px solid var(--grid)}
+.shift th,.shift td{border-bottom:2px solid var(--grid);border-right:2px solid var(--grid);padding:4px 2px}
+.shift th:last-child,.shift td:last-child{border-right:0}
+.shift thead th{position:sticky;top:0;z-index:3;background:var(--panel);height:var(--hh);line-height:1.15;padding:2px}
+.shift thead th:first-child{left:0;z-index:5}
+.shift thead tr:nth-child(2) td{position:sticky;top:var(--hh);z-index:3;background:var(--panel);font-weight:500}
+.shift thead tr:nth-child(2) td.name{z-index:5}
+/* 文字はすべて中央揃え（表の中） */
+table th,table td{text-align:center!important}
+.shift .w,.fin .w{text-align:center!important}
+.nb{justify-content:center}
+.shift td.name{text-align:center}
+/* 文字色はすべて黒（日曜・祝日の曜日のみ赤） */
+:root{--ink:#000;--sub:#000;--eT:#000;--oT:#000}
+.warn,.low,.big,.pay,.btn,.btn.main{color:#000}
+th.sat,.dl.sat{color:#000}
+.btn.main{background:#cfe3ee;border-color:#1f5f7a}
