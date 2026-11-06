@@ -14,6 +14,9 @@ const pal = x => JC[x.c % PAL];
 const cvars = () => undefined;
 const ucls = x => x ? ' u' + (x.c % PAL) : '';
 const nameBg = p => p.bg != null ? { background: JC[p.bg % PAL][0], color: JC[p.bg % PAL][1] } : undefined;
+// スタッフ名の文字サイズ: 個別に指定(fs)がなければ、1行に収まる大きさに自動調整（8〜13px）
+const nameUnits = n => [...n].reduce((a, c) => a + (c.charCodeAt(0) < 256 ? 0.55 : 1), 0);
+const nameFs = p => p.fs || Math.max(8, Math.min(13, Math.floor(92 / Math.max(1, nameUnits(p.name)))));
 const Opts = ({ v, onChange }) => (
   <select value={v} onChange={e => onChange(e.target.value)}>
     {TIMES.map(t => <option key={t} value={t}>{lab(t)}</option>)}
@@ -22,7 +25,7 @@ const Opts = ({ v, onChange }) => (
 
 export default function ShiftApp({ store, name }) {
   const [S, setS] = useState(INIT), [P, setP] = useState(null), [req, setReq] = useState({});
-  const [dlg, setDlg] = useState(null), [nn, setNn] = useState(''), [nr, setNr] = useState('アルバイト'), [nd, setNd] = useState(''), [pick, setPick] = useState(null), [syncErr, setSyncErr] = useState(''), [blocked, setBlocked] = useState(false), [saveMsg, setSaveMsg] = useState(''), [ed, setEd] = useState(null), [nbg, setNbg] = useState(null), [nw, setNw] = useState('1200'), [sel, setSel] = useState([]), [bw, setBw] = useState(''), [hN, setHN] = useState(0), [fN, setFN] = useState(0);
+  const [dlg, setDlg] = useState(null), [nn, setNn] = useState(''), [nr, setNr] = useState('アルバイト'), [nd, setNd] = useState(''), [pick, setPick] = useState(null), [syncErr, setSyncErr] = useState(''), [blocked, setBlocked] = useState(false), [saveMsg, setSaveMsg] = useState(''), [ed, setEd] = useState(null), [nbg, setNbg] = useState(null), [nw, setNw] = useState('1200'), [sel, setSel] = useState([]), [bw, setBw] = useState(''), [hN, setHN] = useState(0), [fN, setFN] = useState(0), [per, setPer] = useState(10);
   const ver = useRef(0), skip = useRef(true), chain = useRef(Promise.resolve()), hist = useRef([]), Sref = useRef(INIT), lastTag = useRef({ t: '', at: 0 }), fut = useRef([]);
   // 元に戻す用の履歴（最大50件）。同じ入力欄への連続入力(tag)は、1回の操作にまとめる
   const set = (f, tag) => {
@@ -42,6 +45,7 @@ export default function ShiftApp({ store, name }) {
     lastTag.current = { t: '', at: 0 }; hist.current.push(Sref.current); Sref.current = nxt; setS(nxt); setHN(hist.current.length); setFN(fut.current.length);
   };
   useEffect(() => { Sref.current = S; }, [S]);
+  useEffect(() => { try { const v = +localStorage.getItem('jpgPer:' + store); if (v >= 1) setPer(v); } catch {} }, []); // JPG1枚あたりの人数（この端末の設定）
   useEffect(() => {
     const h = e => {
       if (!(e.ctrlKey || e.metaKey) || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
@@ -171,7 +175,7 @@ export default function ShiftApp({ store, name }) {
     d.duties = d.duties.filter(y => y.name !== x.name);
     Object.keys(d.duty).forEach(k => { if (d.duty[k] === x.name) delete d.duty[k]; });
   });
-  const saveEd = () => { set(d => { const t = d.staff.find(x => x.id === ed.id); if (!t) return; t.name = ed.name.trim(); t.role = ed.role; if (ed.bg == null) delete t.bg; else t.bg = ed.bg; }); setEd(null); };
+  const saveEd = () => { set(d => { const t = d.staff.find(x => x.id === ed.id); if (!t) return; t.name = ed.name.trim(); t.role = ed.role; if (ed.fs) t.fs = ed.fs; else delete t.fs; if (ed.bg == null) delete t.bg; else t.bg = ed.bg; }); setEd(null); };
   // 選択（チェックボックス）と一括操作
   const selected = S.staff.filter(p => sel.includes(p.id));
   const toggle = id => setSel(v => (v.includes(id) ? v.filter(x => x !== id) : [...v, id]));
@@ -198,9 +202,9 @@ export default function ShiftApp({ store, name }) {
     set(d => { list.forEach(p => { const q = rq[p.id]; if (q) Object.entries(q.days).forEach(([k, v]) => { d.cells[p.id + '|' + k] = v; }); }); });
   };
 
-  // JPG出力: 10人ごとに画像を分ける（日付の見出し行は、どの画像にも入れる）
+  // JPG出力: 設定した人数ごとに画像を分ける（日付の見出し行は、どの画像にも入れる）
   const exportJpg = async () => {
-    const NW = 116, CW = 76, HW = 60, RH = 46, HH = 44, TT = 56, pad = 16, k = 2, PER = 10;
+    const NW = 116, CW = 76, HW = 60, RH = 46, HH = 44, TT = 56, pad = 16, k = 2, PER = Math.max(1, Math.floor(+per) || 10);
     const pages = Math.max(1, Math.ceil(S.staff.length / PER));
     const base = `shift_${P.y}-${String(P.m + 1).padStart(2, '0')}_${P.h + 1}`;
     const F = '"Hiragino Sans","Yu Gothic",Meiryo,sans-serif';
@@ -221,7 +225,7 @@ export default function ShiftApp({ store, name }) {
       y += HH; ln(y);
       list.forEach(p => {
         if (p.bg != null) { g.fillStyle = JC[p.bg % PAL][0]; g.fillRect(pad, y, NW, RH); }
-        tx(p.name, pad + NW / 2, y + RH / 2 - 7, '500 14px', p.bg != null ? JC[p.bg % PAL][1] : '#000', 'center', NW - 8); tx(p.role || '', pad + NW / 2, y + RH / 2 + 11, '400 11px', p.bg != null ? JC[p.bg % PAL][1] : '#000');
+        tx(p.name, pad + NW / 2, y + RH / 2 - 7, '500 ' + Math.round(nameFs(p) * 1.15) + 'px', p.bg != null ? JC[p.bg % PAL][1] : '#000', 'center', NW - 8); tx(p.role || '', pad + NW / 2, y + RH / 2 + 11, '400 11px', p.bg != null ? JC[p.bg % PAL][1] : '#000');
         ds.forEach((d, i) => {
           const key = p.id + '|' + iso(d), v = S.cells[key] || '', x = pad + NW + i * CW, u = dutyOf(S.duty[key] || '');
           if (!v) return;
@@ -321,6 +325,10 @@ export default function ShiftApp({ store, name }) {
         <button className="btn" onClick={() => { const n = new Date(); setP({ y: n.getFullYear(), m: n.getMonth(), h: n.getDate() > 15 ? 1 : 0 }); }}>現在シフト</button>
         <button className="btn" disabled={!hN} onClick={undo} title="直前の操作を取り消します（Ctrl+Z）">↩ 戻る</button>
         <button className="btn" disabled={!fN} onClick={redo} title="取り消した操作をやり直します（Ctrl+Y または Ctrl+Shift+Z）">進む ↪</button>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13 }}>JPG 1枚あたり
+          <input className="w" type="number" min="1" max="100" style={{ width: 56 }} value={per} aria-label="JPG1枚あたりのスタッフ数"
+            onChange={e => { const v = e.target.value === '' ? '' : Math.min(100, Math.max(1, Math.floor(+e.target.value) || 1)); setPer(v); if (v !== '') { try { localStorage.setItem('jpgPer:' + store, String(v)); } catch {} } }} />
+          人（{Math.max(1, Math.ceil(S.staff.length / (+per >= 1 ? +per : 10)))}枚）</label>
         <button className="btn" onClick={exportJpg}>JPG出力</button>
         <button className="btn" onClick={resetAll}>表示中のシフトを一括リセット</button>
         <button className="btn" onClick={async () => { await fetch(`/api/s/${store}/login`, { method: 'DELETE' }); location.href = `/s/${store}/login`; }}>ログアウト</button>
@@ -350,11 +358,11 @@ export default function ShiftApp({ store, name }) {
             return (
               <tr key={p.id}>
                 <td className="name" style={nameBg(p)}>
-                  <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontWeight: 500, cursor: 'pointer' }}><input type="checkbox" checked={sel.includes(p.id)} onChange={() => toggle(p.id)} aria-label={`${p.name}を選択`} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span></label>
+                  <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontWeight: 500, cursor: 'pointer', minWidth: 0 }}><input type="checkbox" checked={sel.includes(p.id)} onChange={() => toggle(p.id)} aria-label={`${p.name}を選択`} /><span style={{ fontSize: nameFs(p), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{p.name}</span></label>
                   <div className="nb">
                     <button className="mv" disabled={!i} onClick={() => move(i, i - 1)} aria-label="上へ">▲</button>
                     <button className="mv" disabled={i === S.staff.length - 1} onClick={() => move(i, i + 1)} aria-label="下へ">▼</button>
-                    <button className="mv" onClick={() => setEd({ id: p.id, name: p.name, role: p.role, bg: p.bg ?? null })}>編集</button>
+                    <button className="mv" onClick={() => setEd({ id: p.id, name: p.name, role: p.role, bg: p.bg ?? null, fs: p.fs ?? '' })}>編集</button>
                     <button className="mv" onClick={() => del(p)}>削除</button>
                   </div>
                 </td>
@@ -395,7 +403,7 @@ export default function ShiftApp({ store, name }) {
         <div className="wrap" style={{ marginTop: 8 }}><table>
           <thead><tr><th style={{ textAlign: 'left', paddingLeft: 8 }}>スタッフ</th>{ds.map(d => <th key={+d}>{d.getDate()}</th>)}</tr></thead>
           <tbody>{S.staff.map(p => (
-            <tr key={p.id}><td className="name" style={nameBg(p)}>{p.name}{!rq[p.id] && <span className="warn" style={{ fontSize: 12 }}>　未提出</span>}</td>
+            <tr key={p.id}><td className="name" style={nameBg(p)}><span style={{ fontSize: nameFs(p), whiteSpace: 'nowrap' }}>{p.name}</span>{!rq[p.id] && <span className="warn" style={{ fontSize: 12 }}>　未提出</span>}</td>
               {ds.map(d => <td key={+d} className="sm">{rq[p.id]?.days[iso(d)] || ''}</td>)}</tr>
           ))}</tbody>
         </table></div>
@@ -405,6 +413,8 @@ export default function ShiftApp({ store, name }) {
       {ed && <div className="back" onClick={() => setEd(null)}><div className="modal" onClick={e => e.stopPropagation()}>
         <b>スタッフの編集</b>
         <label className="r" style={{ marginTop: 10 }}>名前<input style={{ textAlign: 'left', width: 180 }} value={ed.name} maxLength={20} onChange={e => setEd({ ...ed, name: e.target.value })} /></label>
+        <label className="r">名前の文字サイズ<select value={ed.fs} onChange={e => setEd({ ...ed, fs: e.target.value === '' ? '' : +e.target.value })}><option value="">自動（1行に収まる大きさ）</option>{[8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20].map(n => <option key={n} value={n}>{n}px</option>)}</select></label>
+        <div className="sub" style={{ textAlign: 'center', margin: '4px 0' }}>表示例：<span style={{ fontSize: ed.fs || 13, whiteSpace: 'nowrap' }}>{ed.name}</span></div>
         <label className="r">区分<select value={ed.role} onChange={e => setEd({ ...ed, role: e.target.value })}><option>アルバイト</option><option>社員</option></select></label>
         <div className="sub" style={{ marginTop: 8 }}>名前の列の背景色</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
